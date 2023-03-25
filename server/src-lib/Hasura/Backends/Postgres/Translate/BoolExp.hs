@@ -107,9 +107,10 @@ translateBoolExp = \case
     sqlBExps <- mapM translateBoolExp bes
     return $ foldr (S.BEBin S.OrOp) (S.BELit False) sqlBExps
   BoolNot notExp -> S.BENot <$> translateBoolExp notExp
-  BoolExists (GExists currTableReference wh) -> do
-    whereExp <- withCurrentTable (S.QualTable currTableReference) (translateBoolExp wh)
-    return $ S.mkExists (S.FISimple currTableReference Nothing) whereExp
+  BoolExists (GExists existsTableReference wh) -> do
+    BoolExpCtx { currTableReference } <- ask
+    whereExp <- withRootTable (currTableReference) (withCurrentTable (S.QualTable existsTableReference) (translateBoolExp wh))
+    return $ S.mkExists (S.FISimple existsTableReference Nothing) whereExp
   BoolField boolExp -> case boolExp of
     AVColumn colInfo opExps -> do
       BoolExpCtx {rootReference, currTableReference} <- ask
@@ -146,6 +147,10 @@ translateBoolExp = \case
 -- | Call a given translation action recursively using the given identifier for the 'current' table.
 withCurrentTable :: forall a. S.Qual -> BoolExpM a -> BoolExpM a
 withCurrentTable curr = local (\e -> e {currTableReference = curr})
+
+-- | Call a given translation action recursively using the given identifier for the 'root' table.
+withRootTable :: forall a. S.Qual -> BoolExpM a -> BoolExpM a
+withRootTable root = local (\e -> e {rootReference = root})
 
 -- | Draw a fresh identifier intended to alias the given object.
 freshIdentifier :: forall a. ToTxt a => QualifiedObject a -> BoolExpM Identifier
